@@ -59,7 +59,7 @@ Aplikasi sengaja dibatasi pada dua pekerjaan yang benar-benar dilakukan tim seti
 
 | Halaman | Isi | Elemen interaktif |
 |---|---|---|
-| **Prediksi Manual** | Skoring satu nasabah lewat formulir tiga bagian | 16 isian bernilai bawaan, dua tombol contoh, gauge, pembanding historis |
+| **Prediksi Manual** | Skoring satu nasabah lewat formulir tiga bagian | 16 isian bernilai bawaan, gauge, pembanding historis |
 | **Skoring Massal** | Unggah CSV (atau pakai data contoh) → call list terurut → unduh | Unggah file, slider kapasitas, filter prioritas, dua tombol unduh |
 
 Keduanya dituntun oleh langkah bernomor, dan seluruh isian sudah terisi nilai bawaan

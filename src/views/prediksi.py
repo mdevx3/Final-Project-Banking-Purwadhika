@@ -16,33 +16,6 @@ BAWAAN = {
     "p_euribor": 1.30, "p_conf": -40.0,
 }
 
-CONTOH = {
-    "Contoh peluang tinggi": {
-        **BAWAAN,
-        "p_age": 68, "p_job": "retired", "p_marital": "married", "p_contact": "cellular",
-        "p_month": "oct", "p_day": "tue", "p_campaign": 1, "p_poutcome": "success",
-        "p_previous": 1, "p_pdays": "6", "p_euribor": 0.80, "p_conf": -36.0,
-    },
-    "Contoh peluang rendah": {
-        **BAWAAN,
-        "p_age": 40, "p_job": "blue-collar", "p_marital": "married",
-        "p_edu": "basic.9y", "p_contact": "telephone", "p_month": "may", "p_day": "thu",
-        "p_campaign": 5, "p_poutcome": "nonexistent", "p_previous": 0,
-        "p_pdays": C.PDAYS_BELUM_PERNAH, "p_euribor": 4.90, "p_conf": -46.0,
-    },
-}
-
-
-def _pasang(nilai: dict):
-    """Isi ulang seluruh widget formulir.
-
-    Aman dipanggil dari tombol karena widget baru dibuat setelah baris ini: nilai
-    di session_state akan dipakai sebagai nilai awal widget pada rerun yang sama.
-    """
-    for kunci, isi in nilai.items():
-        st.session_state[kunci] = isi
-    st.session_state.pop("hasil", None)
-
 
 def _formulir(punya_hasil: bool):
     """Gambar formulir. Kembalikan dict input mentah bila tombol hitung ditekan.
@@ -65,16 +38,7 @@ def _formulir(punya_hasil: bool):
 
 
 def _isi_formulir():
-    st.caption("Semua kolom sudah terisi nilai bawaan. Ubah yang perlu saja, "
-               "atau pakai salah satu contoh di bawah untuk mencoba cepat.")
-
-    t1, t2, t3, _ = st.columns([1.35, 1.35, 1.2, 1.6])
-    if t1.button("Contoh peluang tinggi", use_container_width=True):
-        _pasang(CONTOH["Contoh peluang tinggi"])
-    if t2.button("Contoh peluang rendah", use_container_width=True):
-        _pasang(CONTOH["Contoh peluang rendah"])
-    if t3.button("Kembalikan bawaan", use_container_width=True):
-        _pasang(BAWAAN)
+    st.caption("Semua kolom sudah terisi nilai bawaan. Ubah yang perlu saja.")
 
     with st.form("form_nasabah", border=True):
         st.markdown("**Profil nasabah**")
