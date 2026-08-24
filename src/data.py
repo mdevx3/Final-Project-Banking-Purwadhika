@@ -131,3 +131,38 @@ def validasi_upload(df: pd.DataFrame) -> tuple[list[str], list[str]]:
             )
 
     return error, peringatan
+
+def periksa_konsistensi(poutcome: str, pdays: int, previous: int) -> list[str]:
+    """Cari kombinasi riwayat kampanye yang tidak pernah muncul pada data latih.
+
+    Ketiga kolom ini saling terikat pada data asli, tanpa satu pun pengecualian dari
+    41.172 baris:
+      - `poutcome = nonexistent` selalu berpasangan dengan `previous = 0` dan `pdays = 999`
+      - `poutcome = success/failure` selalu punya `previous >= 1`
+      - `pdays != 999` selalu punya `previous >= 1`
+
+    Kombinasi di luar itu tetap bisa diskor model, tetapi angkanya berada di luar
+    sebaran data latih sehingga tidak bisa dipercaya. Karena itu diberi peringatan,
+    bukan diblokir.
+    """
+    pesan = []
+    belum_pernah = poutcome == "nonexistent"
+
+    if belum_pernah and pdays != 999:
+        pesan.append(
+            "`Hasil kampanye sebelumnya` diisi **belum pernah dihubungi**, tetapi "
+            "`Jarak hari sejak kontak terakhir` diisi angka. Kalau nasabah memang belum "
+            "pernah dihubungi, jaraknya harus **Belum pernah**.")
+    if belum_pernah and previous > 0:
+        pesan.append(
+            "`Hasil kampanye sebelumnya` diisi **belum pernah dihubungi**, tetapi "
+            "`Jumlah kontak kampanye sebelumnya` lebih dari 0. Keduanya bertentangan.")
+    if not belum_pernah and previous == 0:
+        pesan.append(
+            "`Hasil kampanye sebelumnya` menyatakan nasabah pernah ditawari, tetapi "
+            "`Jumlah kontak kampanye sebelumnya` masih 0. Isi minimal 1.")
+    if pdays != 999 and previous == 0:
+        pesan.append(
+            "`Jarak hari sejak kontak terakhir` diisi angka, tetapi "
+            "`Jumlah kontak kampanye sebelumnya` masih 0. Keduanya bertentangan.")
+    return pesan

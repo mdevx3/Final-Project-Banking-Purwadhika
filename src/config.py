@@ -26,6 +26,12 @@ AMBANG_OPERASI = 0.13          # dicari lewat CV pada data latih, bukan dipatok 
 BIAYA_PER_PANGGILAN = 1.5      # EUR — 0,05 EUR/menit x 30 menit
 NILAI_PER_DEPOSAN = 5000.0     # EUR — penempatan minimal per deposito
 
+# --- Pilihan pdays pada formulir -------------------------------------------
+# Sentinel 999 ditampilkan sebagai teks, bukan angka, supaya pengguna tidak perlu
+# tahu kodenya. Rentang 0-27 mengikuti nilai yang benar-benar ada pada data latih.
+PDAYS_BELUM_PERNAH = "Belum pernah"
+OPSI_PDAYS = [PDAYS_BELUM_PERNAH] + [str(i) for i in range(0, 28)]
+
 # --- Pengelompokan usia (Section D.c) --------------------------------------
 BIN_USIA = [0, 25, 35, 45, 55, 65, 100]
 LABEL_USIA = ["<25", "25-34", "35-44", "45-54", "55-64", "65+"]

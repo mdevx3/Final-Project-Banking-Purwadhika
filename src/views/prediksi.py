@@ -3,7 +3,8 @@ import pandas as pd
 import streamlit as st
 
 from .. import charts, config as C
-from ..data import buat_fitur, muat_data, segmen_prioritas, skor_prioritas_manual
+from ..data import (buat_fitur, muat_data, periksa_konsistensi, segmen_prioritas,
+                    skor_prioritas_manual)
 from ..model import skor
 
 
@@ -46,16 +47,22 @@ def render():
                                    help="Conversion rate turun konsisten setelah panggilan ke-4.")
 
         st.markdown("#### Riwayat kampanye sebelumnya")
-        d1, d2, d3 = st.columns(3)
+        d1, d2 = st.columns(2)
         poutcome = d1.selectbox("Hasil kampanye sebelumnya", list(C.LABEL_POUTCOME),
                                 format_func=lambda v: C.LABEL_POUTCOME.get(v, v), index=2,
                                 help="Prediktor terkuat yang tersedia sebelum panggilan.")
         previous = d2.number_input("Jumlah kontak kampanye sebelumnya", 0, 10, 0)
-        pernah = d3.toggle("Pernah dihubungi pada kampanye lalu", value=False)
-        pdays = st.slider("Jarak hari sejak kontak terakhir kampanye lalu", 0, 30, 6,
-                          disabled=not pernah,
-                          help="Hanya berlaku bila nasabah pernah dihubungi. "
-                               "Belum pernah dihubungi disimpan sebagai kode 999.")
+
+        # Satu widget, bukan toggle + slider. Di dalam `st.form` perubahan widget tidak
+        # memicu rerun, sehingga `disabled=` yang bergantung pada widget lain akan
+        # memakai nilai lama dan slidernya tetap terkunci sampai form disubmit.
+        pilih_pdays = st.select_slider(
+            "Jarak hari sejak kontak terakhir kampanye lalu",
+            options=C.OPSI_PDAYS, value=C.PDAYS_BELUM_PERNAH,
+            help="Posisi paling kiri berarti nasabah belum pernah dihubungi pada kampanye "
+                 "sebelumnya — pada data asli berkode 999. Geser ke kanan untuk mengisi "
+                 "jarak harinya (rentang pada data latih 0-27 hari).")
+        pdays = 999 if pilih_pdays == C.PDAYS_BELUM_PERNAH else int(pilih_pdays)
 
         st.markdown("#### Kondisi makroekonomi saat panggilan direncanakan")
         e1, e2 = st.columns(2)
@@ -77,9 +84,17 @@ def render():
         "age": age, "job": job, "marital": marital, "education": education,
         "default": default, "housing": housing, "loan": loan, "contact": contact,
         "month": month, "day_of_week": day_of_week, "campaign": campaign,
-        "pdays": pdays if pernah else 999, "previous": previous, "poutcome": poutcome,
+        "pdays": pdays, "previous": previous, "poutcome": poutcome,
         "cons_conf_idx": cons_conf_idx, "euribor3m": euribor3m,
     }])
+    masalah = periksa_konsistensi(poutcome, pdays, previous)
+    if masalah:
+        st.warning(
+            "**Kombinasi riwayat kampanye ini tidak pernah muncul pada data latih.** "
+            "Skor tetap dihitung, tetapi berada di luar sebaran data sehingga tidak bisa "
+            "dipercaya sepenuhnya.\n\n" + "\n".join(f"- {m}" for m in masalah),
+            icon=":material/rule:")
+
     fitur = buat_fitur(baris)
     prob = float(skor(fitur)[0])
 
