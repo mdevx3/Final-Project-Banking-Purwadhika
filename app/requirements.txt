@@ -1,0 +1,6 @@
+# Versi dikunci agar best_model.pkl (dilatih dengan scikit-learn 1.6.1) tetap kompatibel.
+streamlit==1.41.1
+scikit-learn==1.6.1
+pandas==2.2.3
+numpy==2.0.2
+plotly==5.24.1
