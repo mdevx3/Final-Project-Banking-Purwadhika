@@ -1,167 +1,272 @@
-"""Halaman 2 — skoring satu nasabah lewat formulir."""
+"""Halaman 1 — prediksi manual untuk satu nasabah."""
 import pandas as pd
 import streamlit as st
 
 from .. import charts, config as C
-from ..data import (buat_fitur, muat_data, periksa_konsistensi, segmen_prioritas,
-                    skor_prioritas_manual)
+from ..data import buat_fitur, muat_data, periksa_konsistensi
 from ..model import skor
 
+# Nilai bawaan = nasabah dengan profil paling umum pada data latih. Formulir sengaja
+# terisi penuh sejak awal supaya pengguna baru bisa langsung menekan tombol hitung.
+BAWAAN = {
+    "p_age": 41, "p_job": "admin.", "p_marital": "married",
+    "p_edu": "university.degree", "p_default": "no", "p_housing": "no", "p_loan": "no",
+    "p_contact": "cellular", "p_month": "may", "p_day": "mon", "p_campaign": 1,
+    "p_poutcome": "nonexistent", "p_previous": 0, "p_pdays": C.PDAYS_BELUM_PERNAH,
+    "p_euribor": 1.30, "p_conf": -40.0,
+}
 
-def render():
-    st.title("Prediksi Nasabah Individual")
-    st.caption("Hitung peluang satu nasabah membuka deposito sebelum agen menelepon.")
+CONTOH = {
+    "Contoh peluang tinggi": {
+        **BAWAAN,
+        "p_age": 68, "p_job": "retired", "p_marital": "married", "p_contact": "cellular",
+        "p_month": "oct", "p_day": "tue", "p_campaign": 1, "p_poutcome": "success",
+        "p_previous": 1, "p_pdays": "6", "p_euribor": 0.80, "p_conf": -36.0,
+    },
+    "Contoh peluang rendah": {
+        **BAWAAN,
+        "p_age": 40, "p_job": "blue-collar", "p_marital": "married",
+        "p_edu": "basic.9y", "p_contact": "telephone", "p_month": "may", "p_day": "thu",
+        "p_campaign": 5, "p_poutcome": "nonexistent", "p_previous": 0,
+        "p_pdays": C.PDAYS_BELUM_PERNAH, "p_euribor": 4.90, "p_conf": -46.0,
+    },
+}
 
-    df = muat_data()
-    ambang = st.session_state.get("ambang", C.AMBANG_OPERASI)
 
-    with st.form("form_nasabah"):
-        st.markdown("#### Profil nasabah")
-        a1, a2, a3 = st.columns(3)
-        age = a1.slider("Usia", 18, 95, 41,
-                        help="Dikelompokkan otomatis menjadi `age_group` (pola konversi berbentuk U).")
-        job = a2.selectbox("Pekerjaan", list(C.LABEL_JOB),
-                           format_func=lambda v: C.LABEL_JOB.get(v, v), index=0)
-        marital = a3.selectbox("Status pernikahan", list(C.LABEL_MARITAL),
-                               format_func=lambda v: C.LABEL_MARITAL.get(v, v), index=1)
+def _pasang(nilai: dict):
+    """Isi ulang seluruh widget formulir.
+
+    Aman dipanggil dari tombol karena widget baru dibuat setelah baris ini: nilai
+    di session_state akan dipakai sebagai nilai awal widget pada rerun yang sama.
+    """
+    for kunci, isi in nilai.items():
+        st.session_state[kunci] = isi
+    st.session_state.pop("hasil", None)
+
+
+def _formulir(punya_hasil: bool):
+    """Gambar formulir. Kembalikan dict input mentah bila tombol hitung ditekan.
+
+    Begitu satu hasil sudah dihitung, formulir dilipat ke dalam expander supaya
+    hasilnya tidak terdorong jauh ke bawah layar dan pengguna tidak perlu
+    menggulir untuk melihat angka yang baru saja dimintanya.
+    """
+    for kunci, isi in BAWAAN.items():
+        st.session_state.setdefault(kunci, isi)
+
+    st.markdown('<div class="langkah"><span>1</span>Isi data nasabah</div>',
+                unsafe_allow_html=True)
+    if punya_hasil:
+        kotak = st.expander("Buka formulir untuk mengubah data nasabah", expanded=False)
+    else:
+        kotak = st.container()
+    with kotak:
+        return _isi_formulir()
+
+
+def _isi_formulir():
+    st.caption("Semua kolom sudah terisi nilai bawaan. Ubah yang perlu saja, "
+               "atau pakai salah satu contoh di bawah untuk mencoba cepat.")
+
+    t1, t2, t3, _ = st.columns([1.35, 1.35, 1.2, 1.6])
+    if t1.button("Contoh peluang tinggi", use_container_width=True):
+        _pasang(CONTOH["Contoh peluang tinggi"])
+    if t2.button("Contoh peluang rendah", use_container_width=True):
+        _pasang(CONTOH["Contoh peluang rendah"])
+    if t3.button("Kembalikan bawaan", use_container_width=True):
+        _pasang(BAWAAN)
+
+    with st.form("form_nasabah", border=True):
+        st.markdown("**Profil nasabah**")
+        a1, a2, a3, a4 = st.columns(4)
+        a1.slider("Usia", 18, 95, key="p_age")
+        a2.selectbox("Pekerjaan", list(C.LABEL_JOB), key="p_job",
+                     format_func=lambda v: C.LABEL_JOB.get(v, v))
+        a3.selectbox("Status pernikahan", list(C.LABEL_MARITAL), key="p_marital",
+                     format_func=lambda v: C.LABEL_MARITAL.get(v, v))
+        a4.selectbox("Pendidikan terakhir", C.URUTAN_EDUKASI, key="p_edu",
+                     format_func=lambda v: C.LABEL_EDUKASI.get(v, v))
+
+        st.markdown("**Rencana panggilan**")
         b1, b2, b3, b4 = st.columns(4)
-        education = b1.selectbox("Pendidikan terakhir", C.URUTAN_EDUKASI,
-                                 format_func=lambda v: C.LABEL_EDUKASI.get(v, v), index=6)
-        default = b2.selectbox("Kredit macet", ["no", "unknown", "yes"],
-                               format_func=lambda v: C.LABEL_YNU.get(v, v), index=0)
-        housing = b3.selectbox("Punya KPR", ["no", "unknown", "yes"],
-                               format_func=lambda v: C.LABEL_YNU.get(v, v), index=0)
-        loan = b4.selectbox("Punya pinjaman pribadi", ["no", "unknown", "yes"],
-                            format_func=lambda v: C.LABEL_YNU.get(v, v), index=0)
+        b1.selectbox("Ditelepon lewat", ["cellular", "telephone"], key="p_contact",
+                     format_func=lambda v: C.LABEL_CONTACT.get(v, v),
+                     help="Nasabah yang dihubungi lewat ponsel berkonversi 14,7%, "
+                          "lewat telepon rumah hanya 5,2%.")
+        b2.selectbox("Bulan rencana menelepon", C.URUT_BULAN, key="p_month",
+                     format_func=lambda v: C.LABEL_BULAN.get(v, v))
+        b3.selectbox("Hari rencana menelepon", C.URUT_HARI, key="p_day",
+                     format_func=lambda v: C.LABEL_HARI.get(v, v))
+        b4.number_input("Panggilan ke- pada kampanye ini", 1, 60, key="p_campaign",
+                        help="Peluang berhasil turun konsisten setelah panggilan ke-4.")
 
-        st.markdown("#### Rencana kontak")
-        c1, c2, c3, c4 = st.columns(4)
-        contact = c1.selectbox("Kanal kontak", ["cellular", "telephone"],
-                               format_func=lambda v: C.LABEL_CONTACT.get(v, v), index=0,
-                               help="Seluler berkonversi 14,7% vs telepon rumah 5,2%.")
-        month = c2.selectbox("Bulan rencana kontak", C.URUT_BULAN,
-                             format_func=lambda v: C.LABEL_BULAN.get(v, v), index=2)
-        day_of_week = c3.selectbox("Hari rencana kontak", C.URUT_HARI,
-                                   format_func=lambda v: C.LABEL_HARI.get(v, v), index=0)
-        campaign = c4.number_input("Panggilan ke- pada kampanye ini", 1, 60, 1,
-                                   help="Conversion rate turun konsisten setelah panggilan ke-4.")
-
-        st.markdown("#### Riwayat kampanye sebelumnya")
-        d1, d2 = st.columns(2)
-        poutcome = d1.selectbox("Hasil kampanye sebelumnya", list(C.LABEL_POUTCOME),
-                                format_func=lambda v: C.LABEL_POUTCOME.get(v, v), index=2,
-                                help="Prediktor terkuat yang tersedia sebelum panggilan.")
-        previous = d2.number_input("Jumlah kontak kampanye sebelumnya", 0, 10, 0)
-
+        st.markdown("**Riwayat kampanye sebelumnya**")
+        c1, c2 = st.columns(2)
+        c1.selectbox("Hasil kampanye sebelumnya", list(C.LABEL_POUTCOME), key="p_poutcome",
+                     format_func=lambda v: C.LABEL_POUTCOME.get(v, v),
+                     help="Petunjuk terkuat yang sudah tersedia sebelum panggilan.")
+        c2.number_input("Berapa kali dihubungi pada kampanye sebelumnya", 0, 10,
+                        key="p_previous")
         # Satu widget, bukan toggle + slider. Di dalam `st.form` perubahan widget tidak
         # memicu rerun, sehingga `disabled=` yang bergantung pada widget lain akan
         # memakai nilai lama dan slidernya tetap terkunci sampai form disubmit.
-        pilih_pdays = st.select_slider(
-            "Jarak hari sejak kontak terakhir kampanye lalu",
-            options=C.OPSI_PDAYS, value=C.PDAYS_BELUM_PERNAH,
-            help="Posisi paling kiri berarti nasabah belum pernah dihubungi pada kampanye "
-                 "sebelumnya — pada data asli berkode 999. Geser ke kanan untuk mengisi "
-                 "jarak harinya (rentang pada data latih 0-27 hari).")
-        pdays = 999 if pilih_pdays == C.PDAYS_BELUM_PERNAH else int(pilih_pdays)
+        st.select_slider(
+            "Berapa hari lalu terakhir dihubungi", options=C.OPSI_PDAYS, key="p_pdays",
+            help="Posisi paling kiri berarti nasabah belum pernah dihubungi pada "
+                 "kampanye sebelumnya. Geser ke kanan untuk mengisi jarak harinya "
+                 "(pada data latih 0–27 hari).")
 
-        st.markdown("#### Kondisi makroekonomi saat panggilan direncanakan")
-        e1, e2 = st.columns(2)
-        euribor3m = e1.slider("Euribor 3 bulan (%)", 0.60, 5.10, 1.30, 0.01,
-                              help="Fitur paling menentukan. Konversi melonjak saat di bawah 1,5%.")
-        cons_conf_idx = e2.slider("Consumer confidence index", -51.0, -26.0, -40.0, 0.1,
-                                  help="Indeks kepercayaan konsumen, indikator bulanan.")
+        st.markdown("**Kondisi ekonomi saat panggilan direncanakan**")
+        st.caption("Dua angka ini berlaku untuk seluruh nasabah pada bulan berjalan. "
+                   "Kalau belum tahu angka terbarunya, biarkan apa adanya.")
+        d1, d2 = st.columns(2)
+        d1.slider("Suku bunga Euribor 3 bulan (%)", 0.60, 5.10, step=0.01, key="p_euribor",
+                  help="Faktor paling menentukan. Saat suku bunga di bawah 1,5%, "
+                       "minat nasabah pada deposito melonjak.")
+        d2.slider("Indeks kepercayaan konsumen", -51.0, -26.0, step=0.1, key="p_conf",
+                  help="Indikator bulanan; makin mendekati nol makin optimistis konsumen.")
+
+        # Popover, bukan expander: formulir ini sendiri sudah berada di dalam
+        # expander begitu satu hasil dihitung, dan expander tidak boleh bersarang.
+        with st.popover("Data kredit nasabah (opsional — jarang mengubah hasil)",
+                        use_container_width=True):
+            e1, e2, e3 = st.columns(3)
+            e1.selectbox("Pernah kredit macet", ["no", "unknown", "yes"], key="p_default",
+                         format_func=lambda v: C.LABEL_YNU.get(v, v))
+            e2.selectbox("Punya KPR", ["no", "unknown", "yes"], key="p_housing",
+                         format_func=lambda v: C.LABEL_YNU.get(v, v))
+            e3.selectbox("Punya pinjaman pribadi", ["no", "unknown", "yes"], key="p_loan",
+                         format_func=lambda v: C.LABEL_YNU.get(v, v))
 
         kirim = st.form_submit_button("Hitung peluang", type="primary",
-                                      use_container_width=True)
+                                      use_container_width=True,
+                                      icon=":material/calculate:")
 
     if not kirim:
-        st.info("Isi formulir di atas lalu tekan **Hitung peluang**. "
-                "Nilai bawaan mewakili nasabah dengan profil rata-rata.",
-                icon=":material/info:")
-        return
+        return None
 
-    baris = pd.DataFrame([{
-        "age": age, "job": job, "marital": marital, "education": education,
-        "default": default, "housing": housing, "loan": loan, "contact": contact,
-        "month": month, "day_of_week": day_of_week, "campaign": campaign,
-        "pdays": pdays, "previous": previous, "poutcome": poutcome,
-        "cons_conf_idx": cons_conf_idx, "euribor3m": euribor3m,
-    }])
-    masalah = periksa_konsistensi(poutcome, pdays, previous)
+    pilih_pdays = st.session_state["p_pdays"]
+    return {
+        "age": st.session_state["p_age"], "job": st.session_state["p_job"],
+        "marital": st.session_state["p_marital"], "education": st.session_state["p_edu"],
+        "default": st.session_state["p_default"], "housing": st.session_state["p_housing"],
+        "loan": st.session_state["p_loan"], "contact": st.session_state["p_contact"],
+        "month": st.session_state["p_month"], "day_of_week": st.session_state["p_day"],
+        "campaign": st.session_state["p_campaign"],
+        "pdays": 999 if pilih_pdays == C.PDAYS_BELUM_PERNAH else int(pilih_pdays),
+        "previous": st.session_state["p_previous"],
+        "poutcome": st.session_state["p_poutcome"],
+        "cons_conf_idx": st.session_state["p_conf"],
+        "euribor3m": st.session_state["p_euribor"],
+    }
+
+
+def _hasil(inp: dict, ambang: float):
+    baris = pd.DataFrame([inp])
+    masalah = periksa_konsistensi(inp["poutcome"], inp["pdays"], inp["previous"])
     if masalah:
         st.warning(
             "**Kombinasi riwayat kampanye ini tidak pernah muncul pada data latih.** "
-            "Skor tetap dihitung, tetapi berada di luar sebaran data sehingga tidak bisa "
-            "dipercaya sepenuhnya.\n\n" + "\n".join(f"- {m}" for m in masalah),
-            icon=":material/rule:")
+            "Peluang tetap dihitung, tetapi angkanya kurang bisa dipercaya.\n\n"
+            + "\n".join(f"- {m}" for m in masalah), icon=":material/rule:")
 
     fitur = buat_fitur(baris)
     prob = float(skor(fitur)[0])
 
-    skor_m = float(skor_prioritas_manual(fitur).iloc[0])
-    segmen = str(segmen_prioritas(pd.Series([skor_m])).iloc[0])
+    st.markdown('<div class="langkah"><span>2</span>Hasil</div>', unsafe_allow_html=True)
 
-    st.divider()
-    st.markdown("### Hasil")
-    kiri, kanan = st.columns([1, 1.4])
+    # Ketika selisihnya lebih kecil dari pembulatan satu desimal, kedua angka
+    # tampil sama di layar. Kalimatnya diganti supaya tidak terbaca menyangkal diri.
+    nyaris = abs(prob - ambang) < 0.005
+    if prob >= ambang:
+        posisi = ("tepat di batas" if nyaris
+                  else f"di atas batas {C.desimal(ambang * 100, 0)}%")
+        st.success(
+            f"**TELEPON NASABAH INI — masukkan ke antrean.**\n\n"
+            f"Peluang membuka deposito **{C.desimal(prob * 100)}%**, {posisi} "
+            "yang dipilih.", icon=":material/call:")
+    else:
+        posisi = ("hanya terpaut tipis di bawah batas" if nyaris
+                  else f"di bawah batas {C.desimal(ambang * 100, 0)}%")
+        st.warning(
+            f"**PRIORITAS RENDAH — telepon bila kapasitas masih sisa.**\n\n"
+            f"Peluang membuka deposito **{C.desimal(prob * 100)}%**, {posisi} "
+            "yang dipilih. Model mengurutkan, bukan mencoret: nasabah ini tetap "
+            "boleh ditelepon setelah antrean utama habis.", icon=":material/schedule:")
 
+    kiri, kanan = st.columns([1, 1.25])
     with kiri:
         st.plotly_chart(charts.gauge_probabilitas(prob, ambang), use_container_width=True)
-        st.caption(f"Garis hitam adalah ambang operasi {ambang:.2f}.")
+        st.caption(f"Garis hitam = batas masuk antrean "
+                   f"({C.desimal(ambang * 100, 0)}%).")
 
+    df = muat_data()
+    rata_rata = float(df["y_bin"].mean())
     with kanan:
-        if prob >= ambang:
-            st.success(f"**Masukkan ke antrean panggilan.** Peluang {prob * 100:.2f}% "
-                       f"berada di atas ambang operasi {ambang:.2f}.", icon=":material/call:")
-        else:
-            st.warning(f"**Prioritas rendah.** Peluang {prob * 100:.2f}% berada di bawah "
-                       f"ambang operasi {ambang:.2f}. Tetap boleh ditelepon bila kapasitas "
-                       "masih tersisa — model mengurutkan, bukan mencoret.",
-                       icon=":material/schedule:")
-
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Peluang konversi", f"{prob * 100:.2f}%")
-        m2.metric("Lift vs rata-rata", f"{prob / df['y_bin'].mean():.2f}x",
-                  help="Berapa kali lipat di atas conversion rate populasi (11,27%).")
-        m3.metric("Segmen aturan manual", segmen,
-                  help=f"Skor aturan {skor_m:+.1f} dari baseline analis (Section D.h notebook). "
-                       "Dipakai sebagai pembanding, bukan keluaran model.")
+        m1, m2 = st.columns(2)
+        m1.metric("Peluang membuka deposito", f"{C.desimal(prob * 100)}%")
+        m2.metric("Dibanding nasabah rata-rata", f"{C.desimal(prob / rata_rata)}x",
+                  help=f"Rata-rata nasabah pada data historis berpeluang "
+                       f"{C.desimal(rata_rata * 100, 2)}%.")
 
         nilai_harapan = prob * C.NILAI_PER_DEPOSAN - C.BIAYA_PER_PANGGILAN
-        st.metric("Nilai harapan satu panggilan",
-                  f"EUR {nilai_harapan:,.2f}",
-                  help=f"(peluang x EUR {C.NILAI_PER_DEPOSAN:,.0f}) - "
-                       f"EUR {C.BIAYA_PER_PANGGILAN:,.2f} biaya panggilan.")
+        st.metric("Perkiraan nilai satu panggilan", f"EUR {C.ribu(nilai_harapan)}",
+                  help=f"(peluang × EUR {C.ribu(C.NILAI_PER_DEPOSAN)} dana deposito) − "
+                       f"EUR {C.BIAYA_PER_PANGGILAN:,.2f} biaya menelepon.")
 
-    with st.expander("Fitur turunan yang dihitung aplikasi dari input di atas"):
+        # Pembanding historis dibatasi 30 panggilan supaya angkanya tidak menyesatkan.
+        mirip = df[(df["age_group"].astype(str) == str(fitur["age_group"].iloc[0]))
+                   & (df["job"] == inp["job"]) & (df["contact"] == inp["contact"])]
+        if len(mirip) >= 30:
+            st.info(
+                f"Pada data historis, dari **{C.ribu(len(mirip))} panggilan** ke nasabah "
+                f"sejenis (usia {fitur['age_group'].iloc[0]}, "
+                f"{C.LABEL_JOB[inp['job']].lower()}, "
+                f"{C.LABEL_CONTACT[inp['contact']].lower()}), "
+                f"**{C.desimal(mirip['y_bin'].mean() * 100)}%** berakhir dengan deposito.",
+                icon=":material/groups:")
+        else:
+            st.info(f"Profil sejenis hanya muncul {len(mirip)} kali pada data historis — "
+                    "terlalu sedikit untuk dijadikan pembanding.", icon=":material/groups:")
+
+    with st.expander("Rincian teknis — kolom yang dihitung sendiri oleh aplikasi"):
         turunan = pd.DataFrame({
-            "Fitur": ["age_group", "pdays_clean", "was_contacted_before", "has_previous_contact"],
+            "Kolom": ["age_group", "pdays_clean", "was_contacted_before",
+                      "has_previous_contact"],
             "Nilai": [str(fitur["age_group"].iloc[0]),
                       str(int(fitur["pdays_clean"].iloc[0])),
                       str(int(fitur["was_contacted_before"].iloc[0])),
                       str(int(fitur["has_previous_contact"].iloc[0]))],
             "Aturan": [
-                f"Usia {age} tahun masuk kelompok binning [0,25,35,45,55,65,100]",
+                f"Usia {inp['age']} tahun masuk kelompok binning [0,25,35,45,55,65,100]",
                 "Kode 999 (belum pernah dihubungi) diganti -1, bukan 0",
                 "0 bila pdays = 999, selain itu 1",
                 "1 bila jumlah kontak kampanye sebelumnya > 0",
             ],
         })
         st.dataframe(turunan, hide_index=True, use_container_width=True)
-        st.caption("Empat fitur ini tidak diminta dari pengguna karena bisa diturunkan "
-                   "sendiri — persis seperti Section F.1 notebook.")
+        st.caption("Empat kolom ini tidak diminta dari pengguna karena bisa diturunkan "
+                   "sendiri dari isian di atas — persis seperti Section F.1 notebook.")
 
-    st.markdown("### Perbandingan dengan nasabah serupa pada data historis")
-    mirip = df[(df["age_group"].astype(str) == str(fitur["age_group"].iloc[0]))
-               & (df["job"] == job) & (df["contact"] == contact)]
-    if len(mirip) >= 30:
-        st.info(
-            f"Pada data historis ada **{len(mirip):,} panggilan** ke nasabah dengan kombinasi "
-            f"usia *{fitur['age_group'].iloc[0]}*, pekerjaan *{C.LABEL_JOB[job]}*, kanal "
-            f"*{C.LABEL_CONTACT[contact]}*. Sebanyak **{mirip['y_bin'].mean() * 100:.2f}%** "
-            "di antaranya berakhir dengan deposito.",
-            icon=":material/groups:")
+
+def render():
+    st.title("Prediksi Manual — Satu Nasabah")
+    st.caption("Perkirakan peluang seorang nasabah membuka deposito sebelum ditelepon.")
+
+    ambang = st.session_state.get("ambang", C.AMBANG_OPERASI)
+
+    inp = _formulir(punya_hasil="hasil" in st.session_state)
+    if inp is not None:
+        # Digambar ulang sekali supaya formulir langsung terlipat pada perhitungan
+        # pertama; tanpa ini hasil baru muncul di bawah formulir yang masih panjang.
+        st.session_state["hasil"] = inp
+        st.rerun()
+
+    # Hasil disimpan supaya tidak hilang ketika halaman digambar ulang, misalnya
+    # saat batas masuk antrean di sidebar diubah — angka verdict ikut menyesuaikan.
+    if "hasil" in st.session_state:
+        st.divider()
+        _hasil(st.session_state["hasil"], ambang)
     else:
-        st.info(f"Kombinasi profil ini hanya muncul {len(mirip)} kali pada data historis — "
-                "terlalu sedikit untuk dijadikan pembanding yang andal.",
-                icon=":material/groups:")
+        st.info("Tekan **Hitung peluang** untuk melihat hasilnya.",
+                icon=":material/info:")

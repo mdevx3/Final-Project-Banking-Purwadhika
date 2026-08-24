@@ -34,8 +34,22 @@ def buat_fitur(df: pd.DataFrame) -> pd.DataFrame:
     d["has_previous_contact"] = (previous > 0).astype(int)
     d["age_group"] = pd.cut(age, bins=C.BIN_USIA, labels=C.LABEL_USIA)
 
+    # Versi bersih ditulis balik ke kolom aslinya. Tanpa ini, satu sel `age` berisi
+    # teks pada file unggahan tetap tersimpan sebagai string dan meledak begitu
+    # dibandingkan dengan angka — padahal pengguna sudah diberi tahu bahwa nilai
+    # tersebut "diisi nilai default".
+    d["age"] = age
+    d["pdays"] = pdays
     for kol in ["campaign", "previous", "euribor3m", "cons_conf_idx"]:
         d[kol] = pd.to_numeric(d[kol], errors="coerce")
+
+    # Kategori diseragamkan ke huruf kecil di sini, bukan hanya saat masuk model,
+    # supaya file yang menulis "Cellular" atau "May" tetap cocok dengan label
+    # bahasa Indonesia pada tabel hasil.
+    for kol in ["job", "marital", "education", "default", "housing", "loan",
+                "contact", "month", "day_of_week", "poutcome"]:
+        if kol in d.columns:
+            d[kol] = d[kol].astype(str).str.strip().str.lower()
 
     return d
 
@@ -66,11 +80,6 @@ def skor_prioritas_manual(df: pd.DataFrame) -> pd.Series:
     return s
 
 
-def segmen_prioritas(skor: pd.Series) -> pd.Series:
-    return pd.cut(skor, bins=[-2, 0.5, 1.5, 2.5, 3.5, 12],
-                  labels=["E (terendah)", "D", "C", "B", "A (tertinggi)"])
-
-
 # --------------------------------------------------------------------------- #
 # Pemuatan data historis
 # --------------------------------------------------------------------------- #
@@ -79,10 +88,7 @@ def muat_data() -> pd.DataFrame:
     """Data kampanye historis yang sudah dibersihkan (41.172 baris)."""
     df = pd.read_csv(C.DATA_PATH, compression="gzip")
     df["y_bin"] = (df["y"] == "yes").astype(int)
-    df = buat_fitur(df)
-    df["skor_manual"] = skor_prioritas_manual(df)
-    df["segmen_manual"] = segmen_prioritas(df["skor_manual"])
-    return df
+    return buat_fitur(df)
 
 
 @st.cache_data
@@ -132,6 +138,7 @@ def validasi_upload(df: pd.DataFrame) -> tuple[list[str], list[str]]:
 
     return error, peringatan
 
+
 def periksa_konsistensi(poutcome: str, pdays: int, previous: int) -> list[str]:
     """Cari kombinasi riwayat kampanye yang tidak pernah muncul pada data latih.
 
@@ -151,18 +158,21 @@ def periksa_konsistensi(poutcome: str, pdays: int, previous: int) -> list[str]:
     if belum_pernah and pdays != 999:
         pesan.append(
             "`Hasil kampanye sebelumnya` diisi **belum pernah dihubungi**, tetapi "
-            "`Jarak hari sejak kontak terakhir` diisi angka. Kalau nasabah memang belum "
-            "pernah dihubungi, jaraknya harus **Belum pernah**.")
+            "`Berapa hari lalu terakhir dihubungi` diisi angka. Kalau nasabah memang "
+            "belum pernah dihubungi, isian itu harus **Belum pernah**.")
     if belum_pernah and previous > 0:
         pesan.append(
             "`Hasil kampanye sebelumnya` diisi **belum pernah dihubungi**, tetapi "
-            "`Jumlah kontak kampanye sebelumnya` lebih dari 0. Keduanya bertentangan.")
+            "`Berapa kali dihubungi pada kampanye sebelumnya` lebih dari 0. "
+            "Keduanya bertentangan.")
     if not belum_pernah and previous == 0:
         pesan.append(
             "`Hasil kampanye sebelumnya` menyatakan nasabah pernah ditawari, tetapi "
-            "`Jumlah kontak kampanye sebelumnya` masih 0. Isi minimal 1.")
+            "`Berapa kali dihubungi pada kampanye sebelumnya` masih 0. Isi minimal 1.")
     if pdays != 999 and previous == 0:
         pesan.append(
-            "`Jarak hari sejak kontak terakhir` diisi angka, tetapi "
-            "`Jumlah kontak kampanye sebelumnya` masih 0. Keduanya bertentangan.")
+            "`Berapa hari lalu terakhir dihubungi` diisi angka, tetapi "
+            "`Berapa kali dihubungi pada kampanye sebelumnya` masih 0. "
+            "Keduanya bertentangan.")
     return pesan
+

@@ -77,3 +77,18 @@ HIJAU = "#2E8B57"
 MERAH = "#B22222"
 BIRU = "#4682B4"
 ABU = "#8C8C8C"
+
+
+# --- Format angka ------------------------------------------------------------
+def ribu(n: float) -> str:
+    """Pemisah ribuan gaya Indonesia: 3000 -> '3.000'.
+
+    Dipakai pada angka yang dibaca pengguna. Tanpa ini "3,000" terbaca sebagai
+    tiga koma nol bagi pembaca Indonesia.
+    """
+    return f"{n:,.0f}".replace(",", ".")
+
+
+def desimal(n: float, angka: int = 1) -> str:
+    """Angka desimal gaya Indonesia: 13.0 -> '13,0'."""
+    return f"{n:.{angka}f}".replace(".", ",")
